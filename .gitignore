@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Model outputs / checkpoints
+*.gguf
+*.safetensors
+lilstoryteller/
+lilstoryteller-best/
+lilstoryteller-checkpoint/
+checkpoints/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log

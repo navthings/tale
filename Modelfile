@@ -1,0 +1,4 @@
+FROM ./tale-step2000-f16.gguf
+
+PARAMETER temperature 0.8
+PARAMETER num_ctx 384
