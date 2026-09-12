@@ -10,16 +10,6 @@ a small language model trained on [tinystories](https://huggingface.co/datasets/
 
 tale is a ~50m parameter llama-style model built from scratch, trained on apple silicon and exported to gguf for local inference.
 
-## model
-
-* **architecture:** llamaforcausallm
-* **parameters:** ~50m
-* **tokenizer:** gpt-2 bpe
-* **context:** 384 tokens
-* **training data:** tinystories
-* **training device:** apple silicon (mps)
-* **format:** gguf
-* **inference:** llama.cpp / ollama
 
 ## run
 
@@ -40,6 +30,9 @@ tale is an experiment, the evolution to lilstory
 i built it because my little brother kept on asking me for a bedtime story
 
 it's intentionally small.
+
+
+i also ended up using tale for a research paper
 
 ## status
 
