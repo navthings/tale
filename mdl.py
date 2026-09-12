@@ -1,10 +1,5 @@
-# train a small llama-arch model ("lilstoryteller") on tinystories, streamed
-# and tokenized on the fly. optimized for macOS / apple silicon (mps).
-
+# im[orts
 import os
-
-# must be set before transformers/tokenizers is imported, or the fast
-# tokenizer's rust thread pool may be disabled by default
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "true")
 
 import threading
@@ -25,7 +20,7 @@ else:
     device = "cpu"
 print("using:", device)
 
-# bf16 autocast speeds up fwd/bwd on mps/cuda at negligible quality cost
+
 use_autocast = device in ("mps", "cuda")
 autocast_dtype = torch.bfloat16
 
@@ -33,23 +28,20 @@ autocast_dtype = torch.bfloat16
 steps = int(input("steps: "))
 resume_from = input("resume from checkpoint dir (blank for fresh model): ").strip()
 block_size = 384
-batch_size = 16  # 32 OOM'd on MPS backward(); try 8 if this still OOMs
+batch_size = 16  
 
-# lr schedule: short warmup then cosine decay down to min_lr. dropping
-# peak lr from the earlier flat 0.001 run — the val loss plateau there
-# is the classic sign that lr is too high to make progress past the
-# easy early gains.
+
 peak_lr = 3e-4
 min_lr = 3e-5
 warmup_steps = 200
 
-# tokens buffered before training starts, and held-out tokens for validation
+
 min_buffer_tokens = 2_000_000
 val_buffer_tokens = 200_000
 max_buffer_tokens = min_buffer_tokens * 4
-refill_every = 50  # top up train buffer every N steps, not every step
+refill_every = 50  
 
-# tokenizer (GPT-2 BPE)
+# tokenizer I CANT BE BOTHERED TO TRAIN ONE FROM SCRATCH so using gpt 2 idk gonna have to add eos token smw
 tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
@@ -64,18 +56,12 @@ def decode(ids):
     return tokenizer.decode(ids, skip_special_tokens=True)
 
 
-# dataset (100% of train split, streamed)
+# dataset
 dataset = load_dataset("roneneldan/TinyStories", split="train", streaming=True)
-
-# background tokenizer thread — batches examples before encoding so the
-# rust tokenizer backend can actually parallelize across cores (a single
-# tokenizer.encode(s) call never gets that benefit)
 TOKENIZE_BATCH_SIZE = 256
 token_queue = queue.Queue(maxsize=1024)
 stop_signal = object()
-# eos separates stories so the model learns "story over -> emit eos",
-# which is what lets generate() stop on its own instead of running to
-# max_new_tokens every time
+# eos
 eos_ids = [tokenizer.eos_token_id]
 
 
@@ -101,9 +87,7 @@ def tokenizer_worker():
 worker = threading.Thread(target=tokenizer_worker, daemon=True)
 worker.start()
 
-# training buffer: preallocated fixed-capacity tensor + fill pointer, so
-# refills are in-place writes instead of a torch.cat that copies the
-# whole buffer every call
+# training buffer
 train_capacity = max_buffer_tokens
 train_buf = torch.empty(train_capacity, dtype=torch.long)
 train_len = 0
@@ -112,7 +96,6 @@ stream_exhausted = False
 
 
 def _pull_available(max_tokens):
-    # non-blocking: grabs whatever's already queued, up to max_tokens
     global stream_exhausted
     pooled = []
     pooled_len = 0
@@ -132,7 +115,6 @@ def _pull_available(max_tokens):
 
 
 def _pull_blocking(target_len):
-    # blocks (with polling) until target_len tokens arrive or stream ends
     global stream_exhausted
     pooled = []
     pooled_len = 0
@@ -154,7 +136,6 @@ def _pull_blocking(target_len):
 
 
 def _write_into_train_buf(chunk):
-    # in-place append; slides the live window left if capacity is hit
     global train_len
     n = chunk.numel()
     if n == 0:
@@ -180,14 +161,12 @@ def fill_val_buffer():
 
 
 def fill_train_buffer_blocking(min_tokens):
-    # startup only: block until the buffer has at least min_tokens
     needed = min_tokens - train_len
     if needed > 0:
         _write_into_train_buf(_pull_blocking(needed))
 
 
 def refill_train_buffer_nonblocking():
-    # called periodically from the training loop, never from get_batch()
     _write_into_train_buf(_pull_available(train_capacity - train_len))
 
 
@@ -204,7 +183,6 @@ _offsets = torch.arange(block_size)
 
 
 def get_batch():
-    # pure read: no refill here, so this is just indices + a gather
     starts = torch.randint(0, train_len - block_size - 1, (batch_size,))
     idx = starts[:, None] + _offsets
     x = train_buf[idx]
@@ -221,7 +199,7 @@ def get_val_batch():
     return x.to(device, non_blocking=True), y.to(device, non_blocking=True)
 
 
-# model (~50M params, tied embeddings, GQA with 6 query / 2 kv heads)
+# model (should be 50m parameters idk)
 if resume_from:
     model = LlamaForCausalLM.from_pretrained(resume_from).to(device)
     tokenizer = GPT2TokenizerFast.from_pretrained(resume_from)
@@ -242,13 +220,11 @@ else:
     model = LlamaForCausalLM(config).to(device)
 print("parameters:", sum(p.numel() for p in model.parameters()))
 
-# optimizer — foreach=True forces the batched update path on MPS
-# (fused=True isn't supported there)
+# optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=peak_lr, foreach=True)
 
 
 def lr_at(step):
-    # linear warmup, then cosine decay from peak_lr to min_lr
     if step < warmup_steps:
         return peak_lr * (step + 1) / warmup_steps
     progress = (step - warmup_steps) / max(steps - warmup_steps, 1)
@@ -289,11 +265,11 @@ for step in range(steps):
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
-
-    # train loss every step
+    
+    #train loss only works half the time i HAVE NO FUCKING IDEA WHY
     print(f"step {step} | train loss {loss.item():.3f} | lr {lr:.2e} | buffer {train_len} tokens")
 
-    # val loss every 100 steps; save separately whenever it's a new best
+    # val loss
     if step % 100 == 0:
         val_loss = validation_loss()
         print(f"step {step} | val loss {val_loss:.3f}")
@@ -309,8 +285,7 @@ for step in range(steps):
         print(f"checkpoint saved at step {step}")
 
 
-# generation — uses KV cache instead of re-running the full context
-# through every layer on each step
+# generation
 @torch.no_grad()
 def generate(prompt, length=500, temperature=0.8):
     model.eval()
@@ -352,6 +327,6 @@ model.save_pretrained("lilstoryteller")
 tokenizer.save_pretrained("lilstoryteller")
 print("\nmodel saved")
 
-# output
+# test IF THIS DOESNT WORK AFTER I TRIAN FOR 20 HOURS IM GONNA EXPLODE
 print("\nmodel output\n")
 print(generate("Once upon a time ", 500, temperature=0.8))
