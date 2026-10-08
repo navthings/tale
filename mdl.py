@@ -207,11 +207,11 @@ if resume_from:
 else:
     config = LlamaConfig(
         vocab_size=vocab_size,
-        hidden_size=384,
-        intermediate_size=1536,
-        num_hidden_layers=13,
-        num_attention_heads=6,
-        num_key_value_heads=2,
+        hidden_size=448,
+        intermediate_size=1792,
+        num_hidden_layers=17,
+        num_attention_heads=7,
+        num_key_value_heads=1,
         max_position_embeddings=block_size,
         rms_norm_eps=1e-5,
         rope_theta=10000,
